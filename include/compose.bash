@@ -214,6 +214,45 @@ compose-generate-yaml-force() {
         export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY
     fi
     cat > ${composeFile} <<EOF
+core-gateway:
+    image: hortonworks/dps-gateway:2.0.0.0-17
+    ports:
+      - "4000:3000"
+    environment:
+      - SERVICE_NAME=core-gateway
+      - GATEWAY_UPSTREAM_HOSTNAME=traefik
+      - GATEWAY_UPSTREAM_PORT=80
+      - GATEWAY_UNAUTHENTICATED_PATHS=pathPrefix:/core,!pathPrefix:/core/api
+    labels:
+      - traefik.port=3000
+      - traefik.backend=core-gateway
+      - traefik.frontend.priority=5
+
+caas-api:
+    image: hortonworks/dps-caas-api:2.0.0.0-17
+    environment:
+    - DB_HOST=commondb.service.consul
+    - KNOX_HOST=caas-knox.service.consul
+    - CAAS_HOST=caas-api.service.consul
+    - SERVICE_NAME=caas-api
+    dns: $PRIVATE_IP
+    restart: always
+    ports: 
+      - "10080:10080"
+    labels:
+      - traefik.frontend.rule=PathPrefix:/auth,/oidc,/idp,/caas/api
+      - traefik.port=10080
+      - traefik.backend=caas-backend
+      - traefik.frontend.priority=5
+
+caas-knox:
+    dns: $PRIVATE_IP
+    environment:
+    - SERVICE_NAME=caas-knox
+    image: hortonworks/dps-caas-knox:2.0.0.0-17
+    ports:
+    - "11080:11080"
+
 traefik:
     ports:
         - "$PRIVATE_IP:8081:8080"
@@ -637,9 +676,10 @@ uluwatu:
         - AZURE_SUBSCRIPTION_ID
         - AWS_ACCESS_KEY_ID
         - AWS_SECRET_ACCESS_KEY
+        - CAAS_ENABLED=true
     labels:
+      - traefik.frontend.rule=PathPrefixStrip:/cloud
       - traefik.port=3000
-      - traefik.frontend.rule=Host:$PUBLIC_IP,$CB_TRAEFIK_HOST_ADDRESS
       - traefik.backend=uluwatu-backend
       - traefik.frontend.priority=5
     ports:
@@ -705,6 +745,5 @@ periscope:
         max-size: "10M"
         max-file: "5"
     image: $DOCKER_IMAGE_CLOUDBREAK_PERISCOPE:$DOCKER_TAG_PERISCOPE
-
 EOF
 }
